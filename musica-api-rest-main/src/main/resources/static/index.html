@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Canciones</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; }
+        h1 { font-size: 22px; }
+        h2 { font-size: 17px; margin-top: 30px; border-bottom: 1px solid #ccc; padding-bottom: 6px; }
+        label { display: block; margin-top: 12px; font-weight: bold; font-size: 14px; }
+        input { width: 100%; padding: 8px; margin-top: 4px; box-sizing: border-box; }
+        button { padding: 8px 14px; background: #1DB954; color: white; border: none; font-size: 14px; cursor: pointer; border-radius: 4px; }
+        button:hover { background: #169c46; }
+        button.gris { background: #888; }
+        button.gris:hover { background: #666; }
+        button.rojo { background: #d9534f; }
+        button.rojo:hover { background: #c9302c; }
+        button.naranja { background: #f0ad4e; }
+        button.naranja:hover { background: #ec971f; }
+        #mensaje { margin-top: 15px; padding: 10px; display: none; border-radius: 4px; }
+        .ok { background: #d4edda; color: #155724; }
+        .err { background: #f8d7da; color: #721c24; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 14px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background: #f2f2f2; }
+        .acciones { display: flex; gap: 5px; }
+        .buscar { display: flex; gap: 8px; align-items: flex-end; margin-top: 10px; }
+        .buscar input { margin-top: 0; }
+    </style>
+</head>
+<body>
+    <h1> Panel de Canciones</h1>
+
+    <!-- ===== FORMULARIO (Crear / Actualizar) ===== -->
+    <h2 id="formTitulo">Agregar Canción</h2>
+
+    <input type="hidden" id="editId">
+
+    <label for="titulo">Título</label>
+    <input id="titulo" placeholder>
+
+    <label for="artista">Artista</label>
+    <input id="artista" placeholder>
+
+    <label for="album">Álbum</label>
+    <input id="album" placeholder>
+
+    <label for="genero">Género</label>
+    <input id="genero" placeholder>
+
+    <label for="duracion">Duración (segundos)</label>
+    <input id="duracion" type>
+
+    <div style="margin-top:18px; display:flex; gap:8px;">
+        <button id="btnGuardar" onclick="guardar()">Guardar</button>
+        <button id="btnCancelar" class="gris" onclick="cancelarEdicion()" style="display:none;">Cancelar</button>
+    </div>
+
+    <div id="mensaje"></div>
+
+    <!-- ===== LISTADO ===== -->
+    <h2>Listado de Canciones</h2>
+    <button class="gris" onclick="cargarTodas()">Ver todas</button>
+
+    <div class="buscar">
+        <div style="flex:1;">
+            <label for="buscarId">Buscar por ID</label>
+            <input id="buscarId" type="number" placeholder="Ej: 1">
+        </div>
+        <button onclick="buscarPorId()">Buscar</button>
+    </div>
+
+    <div id="tablaContainer"></div>
+
+    <script>
+        const API = '/canciones';
+
+        // Al cargar la página, mostramos todas las canciones
+        window.onload = cargarTodas;
+
+        // ============ Mensajes ============
+        function mostrarMensaje(texto, tipo) {
+            const msg = document.getElementById('mensaje');
+            msg.className = tipo;
+            msg.textContent = texto;
+            msg.style.display = 'block';
+            setTimeout(() => { msg.style.display = 'none'; }, 3500);
+        }
+
+        // ============ CREATE / UPDATE ============
+        async function guardar() {
+            const id = document.getElementById('editId').value;
+
+            const cancion = {
+                titulo:   document.getElementById('titulo').value.trim(),
+                artista:  document.getElementById('artista').value.trim(),
+                album:    document.getElementById('album').value.trim(),
+                genero:   document.getElementById('genero').value.trim(),
+                duracion: parseInt(document.getElementById('duracion').value)
+            };
+
+            if (!cancion.titulo || !cancion.artista || !cancion.genero || !cancion.duracion) {
+                mostrarMensaje('Llena todos los campos obligatorios', 'err');
+                return;
+            }
+
+            try {
+                const url = id ? `${API}/${id}` : API;
+                const method = id ? 'PUT' : 'POST';
+
+                const res = await fetch(url, {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(cancion)
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    mostrarMensaje(id ? `Actualizada: ${data.titulo}` : `Guardada con id ${data.id}: ${data.titulo}`, 'ok');
+                    limpiarFormulario();
+                    cargarTodas();
+                } else if (res.status === 404) {
+                    mostrarMensaje('No existe la canción', 'err');
+                } else {
+                    mostrarMensaje('Error al guardar (código ' + res.status + ')', 'err');
+                }
+            } catch (e) {
+                mostrarMensaje('No se pudo conectar con la API', 'err');
+            }
+        }
+
+        // ============ READ: todas ============
+        async function cargarTodas() {
+            try {
+                const res = await fetch(API);
+                const data = await res.json();
+                renderTabla(data);
+            } catch (e) {
+                mostrarMensaje('No se pudo conectar con la API', 'err');
+            }
+        }
+
+        // ============ READ: por ID ============
+        async function buscarPorId() {
+            const id = document.getElementById('buscarId').value;
+            if (!id) { mostrarMensaje('Ingresa un ID', 'err'); return; }
+
+            try {
+                const res = await fetch(`${API}/${id}`);
+                if (res.status === 404) {
+                    mostrarMensaje('No existe canción con id ' + id, 'err');
+                    renderTabla([]);
+                    return;
+                }
+                const data = await res.json();
+                renderTabla([data]);
+                mostrarMensaje('Encontrada: ' + data.titulo, 'ok');
+            } catch (e) {
+                mostrarMensaje('No se pudo conectar con la API', 'err');
+            }
+        }
+
+        // ============ UPDATE: cargar al formulario ============
+        async function editar(id) {
+            try {
+                const res = await fetch(`${API}/${id}`);
+                if (!res.ok) { mostrarMensaje('No se pudo cargar la canción', 'err'); return; }
+                const c = await res.json();
+
+                document.getElementById('editId').value = c.id;
+                document.getElementById('titulo').value = c.titulo;
+                document.getElementById('artista').value = c.artista;
+                document.getElementById('album').value = c.album || '';
+                document.getElementById('genero').value = c.genero;
+                document.getElementById('duracion').value = c.duracion;
+
+                document.getElementById('formTitulo').textContent = 'Editar Canción #' + c.id;
+                document.getElementById('btnGuardar').textContent = 'Actualizar';
+                document.getElementById('btnCancelar').style.display = 'inline-block';
+                document.getElementById('titulo').focus();
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            } catch (e) {
+                mostrarMensaje('No se pudo conectar con la API', 'err');
+            }
+        }
+
+        function cancelarEdicion() {
+            limpiarFormulario();
+            mostrarMensaje('Edición cancelada', 'ok');
+        }
+
+        function limpiarFormulario() {
+            document.getElementById('editId').value = '';
+            document.getElementById('titulo').value = '';
+            document.getElementById('artista').value = '';
+            document.getElementById('album').value = '';
+            document.getElementById('genero').value = '';
+            document.getElementById('duracion').value = '';
+            document.getElementById('formTitulo').textContent = 'Agregar Canción';
+            document.getElementById('btnGuardar').textContent = 'Guardar';
+            document.getElementById('btnCancelar').style.display = 'none';
+        }
+
+        // ============ DELETE ============
+        async function eliminar(id, titulo) {
+            if (!confirm('¿Eliminar "' + titulo + '"?')) return;
+
+            try {
+                const res = await fetch(`${API}/${id}`, { method: 'DELETE' });
+
+                if (res.status === 204) {
+                    mostrarMensaje('Eliminada: ' + titulo, 'ok');
+                    // Si estábamos editando esa misma, cancelamos
+                    if (document.getElementById('editId').value == id) limpiarFormulario();
+                    cargarTodas();
+                } else if (res.status === 404) {
+                    mostrarMensaje('La canción ya no existe', 'err');
+                    cargarTodas();
+                } else {
+                    mostrarMensaje('Error al eliminar (código ' + res.status + ')', 'err');
+                }
+            } catch (e) {
+                mostrarMensaje('No se pudo conectar con la API', 'err');
+            }
+        }
+
+        // ============ Render de la tabla ============
+        function renderTabla(canciones) {
+            const cont = document.getElementById('tablaContainer');
+
+            if (!canciones.length) {
+                cont.innerHTML = '<p style="color:#888;">No hay canciones para mostrar.</p>';
+                return;
+            }
+
+            let html = '<table><thead><tr>' +
+                '<th>ID</th><th>Título</th><th>Artista</th><th>Álbum</th>' +
+                '<th>Género</th><th>Duración</th><th>Acciones</th>' +
+                '</tr></thead><tbody>';
+
+            canciones.forEach(c => {
+                html += '<tr>' +
+                    '<td>' + c.id + '</td>' +
+                    '<td>' + escapeHtml(c.titulo) + '</td>' +
+                    '<td>' + escapeHtml(c.artista) + '</td>' +
+                    '<td>' + escapeHtml(c.album || '') + '</td>' +
+                    '<td>' + escapeHtml(c.genero) + '</td>' +
+                    '<td>' + c.duracion + 's</td>' +
+                    '<td><div class="acciones">' +
+                        '<button class="naranja" onclick="editar(' + c.id + ')">Editar</button>' +
+                        '<button class="rojo" onclick="eliminar(' + c.id + ', \'' + escapeJs(c.titulo) + '\')">Eliminar</button>' +
+                    '</div></td>' +
+                '</tr>';
+            });
+
+            html += '</tbody></table>';
+            cont.innerHTML = html;
+        }
+
+        // ============ Util ============
+        function escapeHtml(s) {
+            return String(s ?? '').replace(/[&<>"']/g, m => ({
+                '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+            }[m]));
+        }
+        function escapeJs(s) {
+            return String(s ?? '').replace(/'/g, "\\'");
+        }
+    </script>
+</body>
+</html>
